@@ -1,0 +1,20 @@
+@import "../node_modules/bootstrap/scss/bootstrap";
+
+$tdt-light-gray: #f5f5f5;
+
+.tdt-light-gray-bg {
+  background-color: $tdt-light-gray;
+}
+.background-container {
+  width: 100vw;
+  height: 100vh;
+}
+.tdt-product-container {
+  @extend .mb-3;
+  background-color: white;
+  border: 1px solid white;
+  box-shadow: 0px 0px 4px 4px rgba(0, 0, 0, 0.2);
+  width: 70vw;
+  height: 15vh;
+  border-radius: 10px;
+}
