@@ -1,5 +1,6 @@
 {
-  "include": [
-    ".eslintrc.js"
-  ]
+  "compilerOptions": {
+    "strict": false
+  },
+  "include": [".eslintrc.js"]
 }
