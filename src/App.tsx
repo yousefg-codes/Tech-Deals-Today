@@ -1,5 +1,6 @@
 import "./App.scss";
 import Product from "./components/Product";
+import { testScraper } from "./utils/firebase";
 
 function App() {
   return (
@@ -7,6 +8,13 @@ function App() {
       <div className="w-100 d-flex flex-column align-items-center">
         <div className="">
           <input />
+          <button
+            onClick={() => {
+              testScraper();
+            }}
+          >
+            Test Scraper
+          </button>
         </div>
       </div>
       <div className="w-100 d-flex flex-column align-items-center">

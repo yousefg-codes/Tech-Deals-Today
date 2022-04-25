@@ -2,5 +2,5 @@
   "compilerOptions": {
     "strict": false
   },
-  "include": [".eslintrc.js"]
+  "exclude": ["node_modules"]
 }

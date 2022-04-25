@@ -1,32 +1,5 @@
-import * as functions from "firebase-functions";
-import * as admin from "firebase-admin";
-import * as cheerio from "cheerio";
-import { RequestInfo, RequestInit } from "node-fetch";
-
-const fetch = (url: RequestInfo, init?: RequestInit) =>
-  import("node-fetch").then(({ default: fetch }) => fetch(url, init));
-
-admin.initializeApp();
-const db = admin.firestore();
-const batch = db.batch();
-const productsColl = db.collection("Products");
-exports.runScraper = functions.pubsub
-  .schedule("every 10 minutes")
-  .onRun(async (context) => {
-    await scraperMain();
-    return null;
-  });
-// exports.testScraper = functions.https.onCall(async (data, context) => {
-//   return { html: await scrapeAmazon() };
-// });
-exports.getProducts = functions.https.onCall(async (data, context) => {
-  const today = new Date();
-  const products = db
-    .collection("DailyProductData")
-    .doc(today.getMonth + "-" + today.getDay() + "-" + today.getFullYear())
-    .collection("Products");
-  return { products: await products.get() };
-});
+import fetch from "node-fetch";
+import cheerio from "cheerio";
 const siteEnums = {
   AMAZON: "amazon",
   BEST_BUY: "bestbuy",
@@ -34,7 +7,7 @@ const siteEnums = {
   WALMART: "walmart",
   TARGET: "target",
 };
-const compare = (searchText: string, itemName: string) => {
+const compare = (searchText, itemName) => {
   if (searchText.length < 2 || itemName.length < 2) {
     if (itemName.includes(searchText)) {
       return 1;
@@ -62,7 +35,33 @@ const compare = (searchText: string, itemName: string) => {
   }
   return matches / (searchText.length + itemName.length - 2);
 };
-const containsBannedWord = (title: string, words: string[]) => {
+const filter = (txt, originalArray, comparisonArray) => {
+  let allItems = [];
+  let data = comparisonArray;
+  let comparisonValArr = [];
+  var index = 0;
+  for (var i = 0; i < data.length; i++) {
+    let comparisonVal = compare(
+      txt.toLowerCase(),
+      data[i].name.toLowerCase() +
+        (data[i].description ? " " + data[i].description.toLowerCase() : "")
+    );
+    if (comparisonVal > 0) {
+      comparisonValArr.push(comparisonVal);
+      allItems[index] = { ...originalArray[i], coefficient: comparisonVal };
+      index++;
+    }
+  }
+  return allItems.sort((a, b) => b.coefficient - a.coefficient);
+};
+const searchAlg = (txt, originalArray, comparisonArray) => {
+  if (txt.trim() === "") {
+    return originalArray;
+  }
+  let filteredItems = filter(txt.trim(), originalArray, comparisonArray);
+  return filteredItems;
+};
+const containsBannedWord = (title, words) => {
   for (let i = 0; i < words.length; i++) {
     if (title.includes(words[i])) {
       return true;
@@ -70,27 +69,27 @@ const containsBannedWord = (title: string, words: string[]) => {
   }
   return false;
 };
-const scrapeSite = async (
-  allProducts: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>,
-  baseUrl: string,
-  firstHalfSiteUrl: string,
-  secondHalfSiteUrl: string,
-  productIdentifier: any,
-  titleIdentifier: string,
-  priceIdentifier: string,
-  urlIdentifier: string,
-  siteEnum: string
+export const scrapeSite = async (
+  allProducts,
+  baseUrl,
+  firstHalfSiteUrl,
+  secondHalfSiteUrl,
+  productIdentifier,
+  titleIdentifier,
+  priceIdentifier,
+  urlIdentifier,
+  siteEnum
 ) => {
-  const htmlFound: any = { siteEnum };
-  for (let i = 0; i < allProducts.docs.length; i++) {
-    const id = allProducts.docs[i].id;
+  const htmlFound = { siteEnum };
+  for (let i = 0; i < allProducts.length; i++) {
+    const doc = allProducts[i].doc;
     // allProducts.forEach(({ doc }: { doc: { data: Function } }) => {
-    const { name, bannedWords } = allProducts.docs[i].data();
+    const { name, bannedWords, id } = doc.data();
     const nameWords = name.split(" ");
     htmlFound[id] = { avgPrice: -1, bestIndex: -1, allListings: [] };
     await fetch(
       firstHalfSiteUrl +
-        nameWords.reduce((prev: string, curr: string) => {
+        nameWords.reduce((prev, curr) => {
           return prev === "" ? curr : prev + "+" + curr;
         }, "") +
         secondHalfSiteUrl
@@ -98,7 +97,7 @@ const scrapeSite = async (
       let html = await response.text();
       if (response.status === 200) {
         const $ = cheerio.load(html);
-        $(productIdentifier).each((i: number, item: string) => {
+        $(productIdentifier).each((i, item) => {
           let title = $(item).find(titleIdentifier).text();
           if (siteEnum === siteEnums.EBAY && title.includes("NEW LISTING")) {
             title = title.substring(11);
@@ -141,7 +140,7 @@ const scrapeSite = async (
         let total = 0;
         let lowest = htmlFound[id].allListings[0].price;
         let lowestIndex = 0;
-        htmlFound[id].allListings.forEach((listing: any, index: number) => {
+        htmlFound[id].allListings.forEach((listing, index) => {
           total += listing.price;
           if (listing.price < lowest) {
             lowest = listing.price;
@@ -156,10 +155,25 @@ const scrapeSite = async (
   return htmlFound;
 };
 
-const scraperMain = async () => {
-  const allProducts = await productsColl.get();
+const main = async () => {
+  const allProducts = [
+    {
+      doc: {
+        data: () => ({
+          id: "airbods",
+          name: "airpods pro",
+          bannedWords: ["case", "right", "left"],
+        }),
+      },
+    },
+    {
+      doc: {
+        data: () => ({ id: "ivone", name: "iphone 13", bannedWords: ["case"] }),
+      },
+    },
+  ];
   console.time("loadingSpeed");
-  let allSiteData = await Promise.all([
+  let data = await Promise.all([
     scrapeSite(
       allProducts,
       "https://www.amazon.com",
@@ -202,18 +216,10 @@ const scraperMain = async () => {
       "a.absolute.w-100.h-100.z-1",
       siteEnums.WALMART
     ),
-    //   scrapeSite(
-    //     "https://www.target.com/s?searchTerm=",
-    //     "",
-    //     "div.styles__StyledCol-sc-ct8kx6-0.ebNJlV",
-    //     "a.Link__StyledLink-sc-4b9qcv-0.styles__StyledTitleLink-sc-h3r0um-1.csEnsr.dAyBrL.h-display-block.h-text-bold.h-text-bs",
-    //     "div > section > div > div:nth-child(2) > div > div > div:nth-child(2) > div > div > div:nth-child(2) > div:nth-child(1) > div.h-padding-r-tiny > div > span",
-    //     siteEnums.TARGET
-    //   )
   ]);
-  let overallProductData: any[] = [];
-  allProducts.docs.forEach(({ data, id }) => {
-    const { name } = data();
+  let overallProductData = [];
+  allProducts.forEach(({ doc }) => {
+    const { name, id } = doc.data();
     overallProductData.push({
       name,
       id,
@@ -221,10 +227,9 @@ const scraperMain = async () => {
       bestEnum: "",
     });
     let total = 0;
-    let lowest =
-      allSiteData[0][id].allListings[allSiteData[0][id].bestIndex].price;
-    let lowestEnum = allSiteData[0].siteEnum;
-    allSiteData.forEach((siteData) => {
+    let lowest = data[0][id].allListings[data[0][id].bestIndex].price;
+    let lowestEnum = data[0].siteEnum;
+    data.forEach((siteData) => {
       overallProductData[overallProductData.length - 1][siteData.siteEnum] =
         siteData;
       total += siteData[id].avgPrice;
@@ -236,15 +241,16 @@ const scraperMain = async () => {
     overallProductData[overallProductData.length - 1].avgPrice =
       total / data.length;
     overallProductData[overallProductData.length - 1].bestEnum = lowestEnum;
-    const today = new Date();
-    const docRef = db
-      .collection("DailyProductData")
-      .doc(today.getMonth + "-" + today.getDay() + "-" + today.getFullYear())
-      .collection("Products")
-      .doc(id);
-    batch.set(docRef, overallProductData[overallProductData.length - 1]);
   });
-  batch.commit();
   console.timeEnd("loadingSpeed");
   console.log(overallProductData);
+  //   scrapeSite(
+  //     "https://www.target.com/s?searchTerm=",
+  //     "",
+  //     "div.styles__StyledCol-sc-ct8kx6-0.ebNJlV",
+  //     "a.Link__StyledLink-sc-4b9qcv-0.styles__StyledTitleLink-sc-h3r0um-1.csEnsr.dAyBrL.h-display-block.h-text-bold.h-text-bs",
+  //     "div > section > div > div:nth-child(2) > div > div > div:nth-child(2) > div > div > div:nth-child(2) > div:nth-child(1) > div.h-padding-r-tiny > div > span",
+  //     siteEnums.TARGET
+  //   );
 };
+main();
