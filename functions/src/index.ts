@@ -11,21 +11,23 @@ const db = admin.firestore();
 const batch = db.batch();
 const productsColl = db.collection("Products");
 exports.runScraper = functions.pubsub
-  .schedule("every 10 minutes")
+  .schedule("every 60 minutes")
   .onRun(async (context) => {
     await scraperMain();
     return null;
   });
-// exports.testScraper = functions.https.onCall(async (data, context) => {
-//   return { html: await scrapeAmazon() };
-// });
+exports.scraperTester = functions.https.onCall(async (data, context) => {
+  return await scraperMain();
+});
 exports.getProducts = functions.https.onCall(async (data, context) => {
   const today = new Date();
   const products = db
     .collection("DailyProductData")
-    .doc(today.getMonth + "-" + today.getDay() + "-" + today.getFullYear())
+    .doc(
+      today.getMonth() + 1 + "-" + today.getDate() + "-" + today.getFullYear()
+    )
     .collection("Products");
-  return { products: await products.get() };
+  return { products: (await products.get()).docs.map((doc) => doc.data()) };
 });
 const siteEnums = {
   AMAZON: "amazon",
@@ -79,6 +81,7 @@ const scrapeSite = async (
   titleIdentifier: string,
   priceIdentifier: string,
   urlIdentifier: string,
+  imageUrlIdentifier: string,
   siteEnum: string
 ) => {
   const htmlFound: any = { siteEnum };
@@ -116,15 +119,21 @@ const scrapeSite = async (
             if (siteEnum === siteEnums.TARGET && price.includes("-")) {
               price = "";
             }
+            try {
+              parseFloat(price);
+            } catch (e) {
+              price = "";
+            }
             if (price && title) {
               let url = $(item).find(urlIdentifier).attr().href;
+              let imageUrl = $(item).find(imageUrlIdentifier).attr().src;
               if (
                 siteEnum === siteEnums.WALMART ||
                 siteEnum === siteEnums.AMAZON
               ) {
                 url = baseUrl + url;
                 if (siteEnum === siteEnums.AMAZON) {
-                  url = url + "?tag=yoyogogo-20";
+                  url = url + "&tag=yoyogogo-20";
                 }
               }
               if (price.includes("$")) {
@@ -134,6 +143,7 @@ const scrapeSite = async (
                 title: title,
                 price: parseFloat(price),
                 url,
+                imageUrl,
               });
             }
           }
@@ -153,6 +163,7 @@ const scrapeSite = async (
       }
     });
   }
+  //console.error(htmlFound);
   return htmlFound;
 };
 
@@ -169,6 +180,7 @@ const scraperMain = async () => {
       "span.a-size-medium.a-color-base.a-text-normal",
       "span.a-offscreen",
       "a.a-link-normal.s-no-outline",
+      "img.s-image",
       siteEnums.AMAZON
     ),
     // scrapeSite(
@@ -189,19 +201,21 @@ const scraperMain = async () => {
       ".s-item__title",
       "span.s-item__price",
       "a.s-item__link",
+      "img.s-item__image-img",
       siteEnums.EBAY
     ),
-    scrapeSite(
-      allProducts,
-      "https://www.walmart.com",
-      "https://www.walmart.com/search?q=",
-      "",
-      "div.mb1.ph1.pa0-xl.bb.b--near-white.w-25",
-      "span.f6.f5-l.normal.dark-gray.mb0.mt1.lh-title",
-      "div.b.black.f5.mr1.mr2-xl.lh-copy.f4-l",
-      "a.absolute.w-100.h-100.z-1",
-      siteEnums.WALMART
-    ),
+    // scrapeSite(
+    //   allProducts,
+    //   "https://www.walmart.com",
+    //   "https://www.walmart.com/search?q=",
+    //   "",
+    //   "div.mb1.ph1.pa0-xl.bb.b--near-white.w-25",
+    //   "span.f6.f5-l.normal.dark-gray.mb0.mt1.lh-title",
+    //   "div.b.black.f5.mr1.mr2-xl.lh-copy.f4-l",
+    //   "a.absolute.w-100.h-100.z-1",
+    //   "img.absolute.top-0.left-0",
+    //   siteEnums.WALMART
+    // ),
     //   scrapeSite(
     //     "https://www.target.com/s?searchTerm=",
     //     "",
@@ -212,8 +226,9 @@ const scraperMain = async () => {
     //   )
   ]);
   let overallProductData: any[] = [];
-  allProducts.docs.forEach(({ data, id }) => {
-    const { name } = data();
+  allProducts.docs.forEach((doc) => {
+    const { name } = doc.data();
+    const id = doc.id;
     overallProductData.push({
       name,
       id,
@@ -234,16 +249,19 @@ const scraperMain = async () => {
       }
     });
     overallProductData[overallProductData.length - 1].avgPrice =
-      total / data.length;
+      total / allSiteData.length;
     overallProductData[overallProductData.length - 1].bestEnum = lowestEnum;
     const today = new Date();
     const docRef = db
       .collection("DailyProductData")
-      .doc(today.getMonth + "-" + today.getDay() + "-" + today.getFullYear())
+      .doc(
+        today.getMonth() + 1 + "-" + today.getDate() + "-" + today.getFullYear()
+      )
       .collection("Products")
       .doc(id);
     batch.set(docRef, overallProductData[overallProductData.length - 1]);
   });
+  //console.error(overallProductData);
   batch.commit();
   console.timeEnd("loadingSpeed");
   console.log(overallProductData);

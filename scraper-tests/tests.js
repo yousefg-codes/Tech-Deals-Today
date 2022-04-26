@@ -78,6 +78,7 @@ export const scrapeSite = async (
   titleIdentifier,
   priceIdentifier,
   urlIdentifier,
+  imageUrlIdentifier,
   siteEnum
 ) => {
   const htmlFound = { siteEnum };
@@ -117,13 +118,14 @@ export const scrapeSite = async (
             }
             if (price && title) {
               let url = $(item).find(urlIdentifier).attr().href;
+              let imageUrl = $(item).find(imageUrlIdentifier).attr().src;
               if (
                 siteEnum === siteEnums.WALMART ||
                 siteEnum === siteEnums.AMAZON
               ) {
                 url = baseUrl + url;
                 if (siteEnum === siteEnums.AMAZON) {
-                  url = url + "?tag=yoyogogo-20";
+                  url = url + "&tag=yoyogogo-20";
                 }
               }
               if (price.includes("$")) {
@@ -133,6 +135,7 @@ export const scrapeSite = async (
                 title: title,
                 price: parseFloat(price),
                 url,
+                imageUrl,
               });
             }
           }
@@ -148,6 +151,9 @@ export const scrapeSite = async (
           }
         });
         htmlFound[id].bestIndex = lowestIndex;
+        console.log(htmlFound[id].allListings[lowestIndex].url);
+        console.log(htmlFound[id].allListings[lowestIndex].imageUrl);
+        console.log("\n");
         htmlFound[id].avgPrice = total / htmlFound[id].allListings.length;
       }
     });
@@ -183,6 +189,7 @@ const main = async () => {
       "span.a-size-medium.a-color-base.a-text-normal",
       "span.a-offscreen",
       "a.a-link-normal.s-no-outline",
+      "img.s-image",
       siteEnums.AMAZON
     ),
     // scrapeSite(
@@ -203,6 +210,7 @@ const main = async () => {
       ".s-item__title",
       "span.s-item__price",
       "a.s-item__link",
+      "img.s-item__image-img",
       siteEnums.EBAY
     ),
     scrapeSite(
@@ -214,6 +222,7 @@ const main = async () => {
       "span.f6.f5-l.normal.dark-gray.mb0.mt1.lh-title",
       "div.b.black.f5.mr1.mr2-xl.lh-copy.f4-l",
       "a.absolute.w-100.h-100.z-1",
+      "img.absolute.top-0.left-0",
       siteEnums.WALMART
     ),
   ]);
