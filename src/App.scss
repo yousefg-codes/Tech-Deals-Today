@@ -1,41 +1,61 @@
 @import "../node_modules/bootstrap/scss/bootstrap";
 
-$tdt-light-gray: #f5f5f5;
+$tdt-super-light-gray: #f5f5f5;
 $tdt-light-green: #90ee90;
 $tdt-lime-green: #32cd32;
 $tdt-dark-green: #005200;
+$tdt-light-gray: #d3d3d3;
 
 .center-child {
   display: flex;
   align-items: center;
   justify-content: center;
 }
+.tdt-super-light-gray-bg {
+  background-color: $tdt-super-light-gray;
+}
 .tdt-light-gray-bg {
   background-color: $tdt-light-gray;
+}
+.background-white {
+  background-color: white;
 }
 .background-container {
   width: 100vw;
   height: 100vh;
 }
-.tdt-product-price-percentage-outer {
+.tdt-product-price-percentage {
   @extend .px-2;
   @extend .py-2;
   border-radius: 5px;
   background-color: $tdt-light-green;
-  .inner {
-    border-radius: 5px;
-    background-color: $tdt-lime-green;
-    color: $tdt-dark-green;
-  }
+  color: $tdt-dark-green;
 }
 .tdt-product-container {
   @extend .mb-3;
-  background-color: white;
-  border: 1px solid white;
   box-shadow: 0px 0px 4px 4px rgba(0, 0, 0, 0.2);
-  width: 28vw;
-  height: 22vh;
+  width: 13vw;
+  height: 30vh;
+  min-width: 300px;
+  min-height: 500px;
   border-radius: 10px;
+}
+.search-container {
+  @extend .px-2;
+  @extend .py-2;
+  .search-input {
+    outline: none;
+    border: none;
+    width: 93%;
+  }
+  .search-btn {
+    outline: none;
+    border: none;
+    background-color: transparent;
+    width: 7%;
+  }
+  border: 2px solid $tdt-light-gray;
+  border-radius: 5px;
 }
 .gradient {
   animation-duration: 1.8s;

@@ -1,12 +1,17 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
 import {
   connectFunctionsEmulator,
   getFunctions,
   httpsCallable,
 } from "firebase/functions";
-const cheerio = require("cheerio");
+import {
+  getFirestore,
+  addDoc,
+  collection,
+  doc,
+  setDoc,
+} from "firebase/firestore";
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 // Your web app's Firebase configuration
@@ -23,20 +28,28 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
 const functions = getFunctions();
+const firestore = getFirestore();
 // connectFunctionsEmulator(functions, "localhost", 5001);
-
-export const getDailyProducts = async () => {
-  const getDailyProducts = httpsCallable(functions, "getDailyProducts");
-  let returnedData = (await getDailyProducts({ limit: 30 })).data as any;
-  return (await returnedData).products;
+export const putDailyDoc = (data, id) => {
+  setDoc(doc(firestore, "DailyProductData/" + id), data);
 };
-export const getSearchedProducts = async (searchText: string) => {
-  const getSearchedProduct = httpsCallable(functions, "searchForProduct");
-  let returnedData = (await getSearchedProduct({ searchText })).data as any;
-  return (await returnedData).products;
+export const getProducts = async () => {
+  const getDailyProducts = httpsCallable(functions, "getDailyProducts");
+  return ((await getDailyProducts({ limit: 30 })).data as any).products;
+};
+export const getAllProducts = async () => {
+  return (await httpsCallable(functions, "getAllProducts").call(functions)).data
+    .products;
 };
 export const testScraper = async () => {
   await httpsCallable(functions, "scraperTester").call(functions);
+};
+export const uploadDailyProducts = async (products) => {
+  let putProducts = httpsCallable(functions, "putDailyProducts");
+  putProducts({ products });
+};
+export const upload = async (products) => {
+  let putProducts = httpsCallable(functions, "putProducts");
+  putProducts({ products });
 };

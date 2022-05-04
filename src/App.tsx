@@ -1,13 +1,20 @@
+import { faSearch } from "@fortawesome/free-solid-svg-icons";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { useEffect, useState } from "react";
 import "./App.scss";
 import Product from "./components/Product";
-import { getProducts, testScraper } from "./utils/firebase";
+import {
+  getDailyProducts,
+  getSearchedProducts,
+  testScraper,
+} from "./utils/firebase";
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [shownProducts, setShownProducts] = useState([]);
+  const [searchText, setSearchText] = useState("");
   const asyncUseEffect = async () => {
-    const fetchedProducts = await getProducts();
+    const fetchedProducts = await getDailyProducts();
     setShownProducts(fetchedProducts);
   };
   useEffect(() => {
@@ -22,10 +29,28 @@ function App() {
     return loadingProducts;
   };
   return (
-    <div className="background-container tdt-light-gray-bg">
+    <div className="background-container background-white">
       <div className="w-100 d-flex flex-column align-items-center">
-        <div className="">
-          <input />
+        <div className="my-4 w-100 center-child">
+          <div className="search-container w-25">
+            <button
+              className="search-btn"
+              onClick={async () => {
+                setIsLoading(true);
+                const products = await getSearchedProducts(searchText);
+                console.log(products);
+                setShownProducts(products);
+                setIsLoading(false);
+              }}
+            >
+              <FontAwesomeIcon icon={faSearch} />
+            </button>
+            <input
+              className="search-input"
+              placeholder="Search for a product..."
+              type="text"
+            />
+          </div>
           <button
             onClick={() => {
               testScraper();

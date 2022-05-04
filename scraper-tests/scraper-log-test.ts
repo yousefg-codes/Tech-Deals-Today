@@ -1,15 +1,13 @@
-import * as functions from "firebase-functions";
-import * as admin from "firebase-admin";
+import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import { RequestInfo, RequestInit } from "node-fetch";
-
-const fetch = (url: RequestInfo, init?: RequestInit) =>
-  import("node-fetch").then(({ default: fetch }) => fetch(url, init));
-
-admin.initializeApp();
-const db = admin.firestore();
-const batch = db.batch();
-const productsColl = db.collection("Products");
+import { getProducts, putDailyDoc } from "./firebase";
+const siteEnums = {
+  AMAZON: "amazon",
+  BEST_BUY: "bestbuy",
+  EBAY: "ebay",
+  WALMART: "walmart",
+  TARGET: "target",
+};
 const compare = (searchText: string, itemName: string) => {
   if (searchText.length < 2 || itemName.length < 2) {
     if (itemName.includes(searchText)) {
@@ -43,7 +41,7 @@ const filter = (txt: string, originalArray: any[]) => {
   let comparisonValArr = [];
   originalArray.forEach((element) => {
     let comparisonVal = compare(txt.toLowerCase(), element.name.toLowerCase());
-    if (comparisonVal > 0.3) {
+    if (comparisonVal > 0.1) {
       comparisonValArr.push(comparisonVal);
       allItems.push({ ...element, coefficient: comparisonVal });
     }
@@ -58,133 +56,7 @@ const searchAlg = (txt: string, originalArray: any[]) => {
   let filteredItems = filter(txt.trim(), originalArray);
   return filteredItems;
 };
-exports.runScraper = functions
-  .runWith({ timeoutSeconds: 540 })
-  .pubsub.schedule("every 60 minutes")
-  .onRun(async (context) => {
-    scraperMain();
-    return null;
-  });
-exports.scraperTester = functions
-  .runWith({ timeoutSeconds: 540 })
-  .https.onCall(async (data, context) => {
-    scraperMain();
-    return null;
-  });
-exports.putProducts = functions
-  .runWith({ timeoutSeconds: 540 })
-  .https.onCall((data, context) => {
-    let products: any[] = data.products;
-    products.forEach((product) => {
-      const docRef = db.collection("Products").doc();
-      batch.set(docRef, product);
-    });
-    batch.commit();
-  });
-exports.putDailyProducts = functions
-  .runWith({ timeoutSeconds: 540 })
-  .https.onCall((data, context) => {
-    const today = new Date();
-    let products: any[] = data.products;
-    products.forEach((product) => {
-      const docRef = db
-        .collection("DailyProductData")
-        .doc(
-          today.getMonth() +
-            1 +
-            "-" +
-            today.getDate() +
-            "-" +
-            today.getFullYear()
-        )
-        .collection("Products")
-        .doc(product.id);
-      batch.set(docRef, product);
-    });
-    batch.commit();
-  });
-exports.searchForProduct = functions
-  .runWith({ timeoutSeconds: 540, memory: "2GB" })
-  .https.onCall(async (data, context) => {
-    const today = new Date();
-    const productsBasic = await db
-      .collection("DailyProductData")
-      .doc(
-        today.getMonth() + 1 + "-" + today.getDate() + "-" + today.getFullYear()
-      )
-      .get();
-    console.error(data.searchText);
-    const productsBasicData = await productsBasic.data()?.products;
-    let filteredProducts = searchAlg(data.searchText, productsBasicData);
-    console.error(filteredProducts);
-    const products = await db.getAll(
-      ...filteredProducts.splice(0, 20).map(({ id }) =>
-        db
-          .collection("DailyProductData")
-          .doc(
-            today.getMonth() +
-              1 +
-              "-" +
-              today.getDate() +
-              "-" +
-              today.getFullYear()
-          )
-          .collection("Products")
-          .doc(id)
-      )
-    );
-    return {
-      products: products.map((doc, index) => ({
-        ...doc.data(),
-        coefficient: filteredProducts[index].coefficient,
-      })),
-    };
-  });
-exports.getDailyProducts = functions
-  .runWith({ timeoutSeconds: 540 })
-  .https.onCall(async (data, context) => {
-    const today = new Date();
-    const limit: number = data.limit;
-    let productsParsed: any[] = [];
-    try {
-      const products = db
-        .collection("DailyProductData")
-        .doc(
-          today.getMonth() +
-            1 +
-            "-" +
-            today.getDate() +
-            "-" +
-            today.getFullYear()
-        )
-        .collection("Products");
-      productsParsed = (await products.limit(limit).get()).docs.map((doc) =>
-        doc.data()
-      );
-    } catch (e) {
-      console.error(e);
-    }
-    return {
-      products: productsParsed,
-    };
-  });
-exports.getAllProducts = functions.https.onCall(async (data, context) => {
-  const products = db.collection("Products");
-  return {
-    products: (await products.get()).docs.map((doc) => ({
-      ...doc.data(),
-      id: doc.id,
-    })),
-  };
-});
-const siteEnums = {
-  AMAZON: "amazon",
-  BEST_BUY: "bestbuy",
-  EBAY: "ebay",
-  WALMART: "walmart",
-  TARGET: "target",
-};
-const containsBannedWord = (title: string, words: string[]) => {
+const containsBannedWord = (title, words) => {
   for (let i = 0; i < words.length; i++) {
     if (title.includes(words[i])) {
       return true;
@@ -192,23 +64,29 @@ const containsBannedWord = (title: string, words: string[]) => {
   }
   return false;
 };
-const scrapeSite = async (
-  allProducts: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>,
-  baseUrl: string,
-  firstHalfSiteUrl: string,
-  secondHalfSiteUrl: string,
-  productIdentifiers: any[],
-  titleIdentifiers: string[],
-  priceIdentifier: string,
-  urlIdentifier: string,
-  imageUrlIdentifier: string,
-  siteEnum: string
+export const search = async (searchText) => {
+  const productsBasic = await getProducts();
+  const products = searchAlg(searchText, productsBasic);
+  console.log(products);
+};
+export const scrapeSite = async (
+  allProducts,
+  baseUrl,
+  firstHalfSiteUrl,
+  secondHalfSiteUrl,
+  productIdentifiers,
+  titleIdentifiers,
+  priceIdentifier,
+  urlIdentifier,
+  imageUrlIdentifier,
+  siteEnum
 ) => {
-  const htmlFound: any = { siteEnum };
-  for (let i = 0; i < allProducts.docs.length; i++) {
-    const id = allProducts.docs[i].id;
+  const htmlFound = { siteEnum };
+  for (let i = 0; i < allProducts.length; i++) {
+    const doc = allProducts[i];
     // allProducts.forEach(({ doc }: { doc: { data: Function } }) => {
-    const { name, bannedWords } = allProducts.docs[i].data();
+    const { name, bannedWords, id } = doc;
+    const nameWords = name.split(" ");
     htmlFound[id] = { avgPrice: -1, bestIndex: -1, allListings: [] };
     await fetch(
       firstHalfSiteUrl +
@@ -229,6 +107,7 @@ const scrapeSite = async (
                 title = $(item).find(titleIdentifiers[j]).text();
                 j++;
               }
+              //console.log(title + " " + siteEnum);
               if (
                 siteEnum === siteEnums.EBAY &&
                 title.includes("NEW LISTING")
@@ -239,18 +118,16 @@ const scrapeSite = async (
               if (
                 !containsBannedWord(lowerCaseTitle, bannedWords) &&
                 (lowerCaseTitle.includes(name) ||
-                  compare(name, lowerCaseTitle) > 0.6)
+                  compare(name, lowerCaseTitle) > 0.4)
               ) {
-                let price: string | undefined = $(item)
-                  .find(priceIdentifier)
-                  .text();
+                let price = $(item).find(priceIdentifier).text();
                 if (siteEnum === siteEnums.WALMART && price.includes("From")) {
                   price = price.substring(6);
                 }
                 if (siteEnum === siteEnums.TARGET && price.includes("-")) {
                   price = "";
                 }
-                if (price?.includes("$")) {
+                if (price.includes("$")) {
                   price = price.substring(1);
                 }
                 if (price.includes(",")) {
@@ -284,13 +161,18 @@ const scrapeSite = async (
               }
             });
         });
+        // console.log(
+        //   siteEnum === siteEnums.AMAZON && id === "ivone"
+        //     ? htmlFound[id].allListings
+        //     : ""
+        // );
         let total = 0;
         let lowest =
           htmlFound[id].allListings.length > 0
             ? htmlFound[id].allListings[0].price
             : 1000000;
         let lowestIndex = htmlFound[id].allListings.length > 0 ? 0 : -1;
-        htmlFound[id].allListings.forEach((listing: any, index: number) => {
+        htmlFound[id].allListings.forEach((listing, index) => {
           total += listing.price;
           if (listing.price < lowest) {
             lowest = listing.price;
@@ -306,14 +188,27 @@ const scrapeSite = async (
       }
     });
   }
-  //console.error(htmlFound);
+  //console.log(htmlFound);
   return htmlFound;
 };
 
-const scraperMain = async () => {
-  const allProducts = await productsColl.get();
+export const main = async (allProducts?) => {
+  if (!allProducts) {
+    allProducts = [
+      {
+        id: "airbods",
+        name: "airpods pro",
+        bannedWords: ["case", "right", "left"],
+      },
+      {
+        id: "ivone",
+        name: "snowball mic",
+        bannedWords: ["case"],
+      },
+    ];
+  }
   console.time("loadingSpeed");
-  let allSiteData = await Promise.all([
+  let data = await Promise.all([
     scrapeSite(
       allProducts,
       "https://www.amazon.com",
@@ -365,19 +260,9 @@ const scraperMain = async () => {
     //   "img.absolute.top-0.left-0",
     //   siteEnums.WALMART
     // ),
-    //   scrapeSite(
-    //     "https://www.target.com/s?searchTerm=",
-    //     "",
-    //     "div.styles__StyledCol-sc-ct8kx6-0.ebNJlV",
-    //     "a.Link__StyledLink-sc-4b9qcv-0.styles__StyledTitleLink-sc-h3r0um-1.csEnsr.dAyBrL.h-display-block.h-text-bold.h-text-bs",
-    //     "div > section > div > div:nth-child(2) > div > div > div:nth-child(2) > div > div > div:nth-child(2) > div:nth-child(1) > div.h-padding-r-tiny > div > span",
-    //     siteEnums.TARGET
-    //   )
   ]);
-  let overallProductData: any[] = [];
-  allProducts.docs.forEach((doc) => {
-    const { name } = doc.data();
-    const id = doc.id;
+  let overallProductData = [];
+  allProducts.forEach(({ id, name }) => {
     overallProductData.push({
       name,
       id,
@@ -387,14 +272,12 @@ const scraperMain = async () => {
     let total = 0;
     let validSites = 0;
     let lowest =
-      allSiteData[0][id].bestIndex > -1
-        ? allSiteData[0][id].allListings[allSiteData[0][id].bestIndex].price
+      data[0][id].bestIndex > -1
+        ? data[0][id].allListings[data[0][id].bestIndex].price
         : 1000000;
     let lowestEnum =
-      allSiteData[0][id].bestIndex > -1
-        ? allSiteData[0].siteEnum
-        : allSiteData[1].siteEnum;
-    allSiteData.forEach((siteData) => {
+      data[0][id].bestIndex > -1 ? data[0].siteEnum : data[1].siteEnum;
+    data.forEach((siteData) => {
       overallProductData[overallProductData.length - 1][siteData.siteEnum] =
         siteData[id];
       if (siteData[id].avgPrice > 0) {
@@ -418,37 +301,28 @@ const scraperMain = async () => {
       )
     ) {
       overallProductData.splice(overallProductData.length - 1, 1);
-    } else {
-      const today = new Date();
-      const docRef = db
-        .collection("DailyProductData")
-        .doc(
-          today.getMonth() +
-            1 +
-            "-" +
-            today.getDate() +
-            "-" +
-            today.getFullYear()
-        )
-        .collection("Products")
-        .doc(id);
-      batch.set(docRef, overallProductData[overallProductData.length - 1]);
     }
   });
-  const today = new Date();
-  const docRef = db
-    .collection("DailyProductData")
-    .doc(
-      today.getMonth() + 1 + "-" + today.getDate() + "-" + today.getFullYear()
-    );
-  batch.set(docRef, {
-    products: overallProductData.map(({ id, name }) => ({
-      id,
-      name,
-    })),
-  });
-  //console.error(overallProductData);
-  batch.commit();
   console.timeEnd("loadingSpeed");
-  // console.log(overallProductData);
+  let today = new Date();
+  putDailyDoc(
+    { products: allProducts },
+    today.getMonth() +
+      1 +
+      "-" +
+      (today.getDate() + 1) +
+      "-" +
+      today.getFullYear()
+  );
+  //console.log(overallProductData);
+  //   scrapeSite(
+  //     "https://www.target.com/s?searchTerm=",
+  //     "",
+  //     "div.styles__StyledCol-sc-ct8kx6-0.ebNJlV",
+  //     "a.Link__StyledLink-sc-4b9qcv-0.styles__StyledTitleLink-sc-h3r0um-1.csEnsr.dAyBrL.h-display-block.h-text-bold.h-text-bs",
+  //     "div > section > div > div:nth-child(2) > div > div > div:nth-child(2) > div > div > div:nth-child(2) > div:nth-child(1) > div.h-padding-r-tiny > div > span",
+  //     siteEnums.TARGET
+  //   );
+  return overallProductData;
 };
+//main();

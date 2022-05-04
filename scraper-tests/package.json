@@ -3,7 +3,7 @@
   "name": "scraper-tests",
   "version": "1.0.0",
   "description": "scraper testing for tech deals",
-  "main": "tests.js",
+  "main": "scraper-log-test.ts",
   "scripts": {
     "test": "node tests.js"
   },
