@@ -105,7 +105,7 @@ export const scrapeSite = async (
     );
     for (let i = 0; i < 3; i++) {
       let html = await response.text();
-      console.log(html);
+      //console.log(html);
       if (response.status === 200) {
         const $ = cheerio.load(html);
         productIdentifiers.forEach((productIdentifier) => {
@@ -141,33 +141,32 @@ export const scrapeSite = async (
 };
 
 const main = async () => {
-  // const baseBannedWords = [
-  //   "case",
-  //   "cover",
-  //   "muffle",
-  //   "filter",
-  //   "fluff",
-  //   "holder",
-  //   "mount",
-  //   "strap",
-  // ];
-  // scrapeSite(
-  //   baseBannedWords,
-  //   ["keyboards", "mouse", "smart phone", "laptop"],
-  //   "https://www.amazon.com",
-  //   "https://www.amazon.com/s?k=",
-  //   "",
-  //   [
-  //     "div.s-result-item.s-asin.sg-col-0-of-12.sg-col-16-of-20.sg-col.s-widget-spacing-small.sg-col-12-of-16",
-  //     "div.sg-col-4-of-12.s-result-item.s-asin.sg-col-4-of-16.sg-col.s-widget-spacing-small.sg-col-4-of-20",
-  //   ],
-  //   [
-  //     "span.a-size-medium.a-color-base.a-text-normal",
-  //     "span.a-size-base-plus.a-color-base.a-text-normal",
-  //   ],
-  //   "a.s-pagination-item.s-pagination-next.s-pagination-button.s-pagination-separator",
-  //   siteEnums.AMAZON
-  // );
-  search("Logitech");
+  const baseBannedWords = [
+    "case",
+    "cover",
+    "muffle",
+    "filter",
+    "fluff",
+    "holder",
+    "mount",
+    "strap",
+  ];
+  scrapeSite(
+    baseBannedWords,
+    ["cameras"],
+    "https://www.amazon.com",
+    "https://www.amazon.com/s?k=",
+    "",
+    [
+      "div.s-result-item.s-asin.sg-col-0-of-12.sg-col-16-of-20.sg-col.s-widget-spacing-small.sg-col-12-of-16",
+      "div.sg-col-4-of-12.s-result-item.s-asin.sg-col-4-of-16.sg-col.s-widget-spacing-small.sg-col-4-of-20",
+    ],
+    [
+      "span.a-size-medium.a-color-base.a-text-normal",
+      "span.a-size-base-plus.a-color-base.a-text-normal",
+    ],
+    "a.s-pagination-item.s-pagination-next.s-pagination-button.s-pagination-separator",
+    siteEnums.AMAZON
+  );
 };
 main();

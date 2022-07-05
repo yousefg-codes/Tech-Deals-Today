@@ -57,6 +57,12 @@ $tdt-light-gray: #d3d3d3;
   border: 2px solid $tdt-light-gray;
   border-radius: 5px;
 }
+.light-hover {
+  transition: 200ms;
+  &:hover {
+    opacity: 0.6;
+  }
+}
 .gradient {
   animation-duration: 1.8s;
   animation-fill-mode: forwards;
@@ -74,5 +80,27 @@ $tdt-light-gray: #d3d3d3;
   }
   100% {
     background-position: 468px 0;
+  }
+}
+.dot-carousel {
+  position: relative;
+  left: -9999px;
+  width: 10px;
+  height: 10px;
+  border-radius: 5px;
+  background-color: gray;
+  color: gray;
+  box-shadow: 9984px 0 0 0 gray, 9999px 0 0 0 gray, 10014px 0 0 0 gray;
+  animation: dotCarousel 1.5s infinite linear;
+}
+@keyframes dotCarousel {
+  0% {
+    box-shadow: 9984px 0 0 -1px gray, 9999px 0 0 1px gray, 10014px 0 0 -1px gray;
+  }
+  50% {
+    box-shadow: 10014px 0 0 -1px gray, 9984px 0 0 -1px gray, 9999px 0 0 1px gray;
+  }
+  100% {
+    box-shadow: 9999px 0 0 1px gray, 10014px 0 0 -1px gray, 9984px 0 0 -1px gray;
   }
 }

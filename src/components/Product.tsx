@@ -9,22 +9,29 @@ const Product = ({
   productData?: any;
 }) => {
   //console.log(productData);
-  if (isLoading) {
-    return (
-      <div className="tdt-product-container d-flex flex-row align-items-center justify-content-between overflow-hidden"></div>
-    );
-  }
-  const bestProduct =
-    productData[productData?.bestEnum].allListings[
-      productData[productData?.bestEnum].bestIndex
-    ];
+  let bestProduct = !productData
+    ? null
+    : productData[productData?.bestEnum]?.allListings[
+        productData[productData?.bestEnum]?.bestIndex
+      ];
   if (!bestProduct) {
-    return <div></div>;
+    bestProduct = {
+      url: "        ",
+      imageUrl: "        ",
+      price: "       ",
+      title: "                             ",
+    };
   }
   return (
-    <div className="tdt-product-container ms-3 d-flex flex-column align-items-center justify-content-between overflow-hidden px-2 py-2 ">
+    <div
+      className={`tdt-product-container ${
+        window.innerWidth < 600 ? "" : "ms-3"
+      } d-flex flex-column align-items-center justify-content-between overflow-hidden px-2 py-2`}
+    >
       <div
-        className="background-white px-2 py-2 w-100 center-child"
+        className={`background-white px-2 py-2 w-100 center-child ${
+          isLoading ? "gradient" : ""
+        }`}
         style={{ height: "45%", borderRadius: "5px" }}
       >
         <img
@@ -40,8 +47,13 @@ const Product = ({
         className="d-flex flex-column align-items-center justify-content-between h-100 mt-3 px-2 py-2 background-white"
         style={{ flex: 1, borderRadius: "5px", maxHeight: "55%" }}
       >
-        <div className="d-flex flex-column align-items-center w-100">
+        <div
+          className={`d-flex flex-column align-items-center w-100 ${
+            isLoading ? "h-25" : ""
+          }`}
+        >
           <strong
+            className={`${isLoading ? "gradient h-100" : ""}`}
             style={{
               fontSize: "1em",
               textAlign: "center",
@@ -58,33 +70,60 @@ const Product = ({
               ? bestProduct.title.substring(0, 101) + "..."
               : bestProduct.title}
           </strong>
-          <div style={{ fontSize: "1.6em" }}>
-            ${Math.round(bestProduct.price * 100) / 100}
+          <div
+            className={`${isLoading ? "gradient w-100 h-100 mt-2" : ""}`}
+            style={{ fontSize: "1.6em" }}
+          >
+            {!isLoading
+              ? `$${Math.round(bestProduct.price * 100) / 100}`
+              : "      "}
           </div>
         </div>
-        <div className="d-flex flex-row d-flex flex-column justify-content-center">
-          <div className="d-flex flex-column align-items-center h-100 me-2 mb-2">
+        <div
+          className={`d-flex flex-row d-flex flex-column justify-content-center ${
+            isLoading ? "h-50 w-100" : ""
+          }`}
+        >
+          <div
+            className={`d-flex flex-column align-items-center h-100 me-2 mb-2 ${
+              isLoading ? "gradient w-100" : ""
+            }`}
+          >
             <div
-              className="tdt-product-price-percentage fw-bold"
+              className={`tdt-product-price-percentage fw-bold ${
+                isLoading ? "gradient" : ""
+              }`}
               style={{ width: "fit-content" }}
             >
-              -
-              {Math.round(
-                (100 - 100 * (bestProduct.price / productData.avgPrice)) * 100
-              ) / 100}
-              %
+              {!isLoading
+                ? "-" +
+                  Math.round(
+                    (100 - 100 * (bestProduct.price / productData.avgPrice)) *
+                      100
+                  ) /
+                    100 +
+                  "%"
+                : "      "}
             </div>
-            <div style={{ fontSize: "1.1em" }}>
-              Avg. Price: ${Math.round(productData.avgPrice * 100) / 100}
+            <div
+              className={`${isLoading ? "gradient" : ""}`}
+              style={{ fontSize: "1.1em" }}
+            >
+              {!isLoading
+                ? `Avg. Price: $${Math.round(productData.avgPrice * 100) / 100}`
+                : "             "}
             </div>
             <a
               href={bestProduct.url}
               target="_blank"
+              className={`${isLoading ? "gradient" : ""}`}
               style={{ fontSize: "1.1em" }}
             >
-              {productData.bestEnum}
+              {!isLoading ? productData.bestEnum : "        "}
               {"  "}
-              <FontAwesomeIcon icon={faArrowUpRightFromSquare} />
+              {!isLoading ? (
+                <FontAwesomeIcon icon={faArrowUpRightFromSquare} />
+              ) : null}
             </a>
           </div>
         </div>

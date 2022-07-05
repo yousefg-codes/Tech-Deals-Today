@@ -16,6 +16,9 @@
   "license": "ISC",
   "dependencies": {
     "cheerio": "^1.0.0-rc.10",
-    "node-fetch": "^3.2.3"
+    "https-proxy-agent": "^5.0.1",
+    "node-fetch": "^3.2.3",
+    "puppeteer": "^14.1.0",
+    "puppeteer-core": "^14.1.0"
   }
 }

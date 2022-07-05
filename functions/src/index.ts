@@ -8,8 +8,7 @@ const fetch = (url: RequestInfo, init?: RequestInit) =>
 
 admin.initializeApp();
 const db = admin.firestore();
-const batch = db.batch();
-const productsColl = db.collection("Products");
+//const productsColl = db.collection("Products");
 const compare = (searchText: string, itemName: string) => {
   if (searchText.length < 2 || itemName.length < 2) {
     if (itemName.includes(searchText)) {
@@ -36,69 +35,128 @@ const compare = (searchText: string, itemName: string) => {
       matches += 2;
     }
   }
+  //console.error(matches);
   return matches / (searchText.length + itemName.length - 2);
+};
+const extractNumbers = (str: string) => {
+  let numbers: string = "";
+  for (let j = 0; j < str.length; j++) {
+    if (!isNaN(parseInt(str.substring(j, j + 1)))) {
+      numbers += str.substring(j, j + 1);
+    }
+  }
+  return numbers;
+};
+const compareProductTitles = (searchText: string, itemName: string) => {
+  if (searchText.length < 2 || itemName.length < 2) {
+    if (itemName.includes(searchText)) {
+      return 1;
+    }
+    return 0;
+  }
+  let searchTextEveryTwo = new Map();
+  let allWords = searchText.split(" ");
+  allWords.forEach((word) => {
+    searchTextEveryTwo.set(word, 1);
+  });
+  let matches = 0;
+  let matchingItemWords = itemName.split(" ");
+  for (let i = 0; i < matchingItemWords.length; i++) {
+    let everyWord = matchingItemWords[i];
+    let count = searchTextEveryTwo.has(everyWord)
+      ? searchTextEveryTwo.get(everyWord)
+      : 0;
+    if (count > 0) {
+      searchTextEveryTwo.set(everyWord, count);
+      matches += 2;
+    }
+  }
+  const searchTermNumbers = extractNumbers(searchText);
+  const itemNameNumbers = extractNumbers(itemName);
+  const numbersMatchVal = compare(searchTermNumbers, itemNameNumbers);
+  //console.error(matches);
+  if (numbersMatchVal < 0.75) {
+    return 0;
+  }
+  return matches / (searchText.length + itemName.length - 2) + numbersMatchVal;
 };
 const filter = (txt: string, originalArray: any[]) => {
   let allItems: any[] = [];
   let comparisonValArr = [];
   originalArray.forEach((element) => {
     let comparisonVal = compare(txt.toLowerCase(), element.name.toLowerCase());
-    if (comparisonVal > 0.3) {
+    if (comparisonVal > 0) {
       comparisonValArr.push(comparisonVal);
       allItems.push({ ...element, coefficient: comparisonVal });
     }
   });
-  console.error(allItems);
+  //console.error(allItems);
   return allItems.sort((a, b) => b.coefficient - a.coefficient);
 };
 const searchAlg = (txt: string, originalArray: any[]) => {
   if (txt.trim() === "") {
+    console.error("HOLD UP.... WAIT A MINUTE");
     return originalArray;
   }
   let filteredItems = filter(txt.trim(), originalArray);
   return filteredItems;
 };
 exports.runScraper = functions
-  .runWith({ timeoutSeconds: 540 })
-  .pubsub.schedule("every 60 minutes")
+  .runWith({ timeoutSeconds: 540, memory: "2GB" })
+  .pubsub.schedule("every 5 minutes")
   .onRun(async (context) => {
-    scraperMain();
+    await scraperMain().catch((e) => {
+      fetch(
+        "https://hooks.slack.com/services/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",
+        { method: "POST", body: JSON.stringify({ text: e }) }
+      );
+    });
     return null;
   });
 exports.scraperTester = functions
-  .runWith({ timeoutSeconds: 540 })
+  .runWith({ timeoutSeconds: 540, memory: "2GB" })
   .https.onCall(async (data, context) => {
     scraperMain();
     return null;
   });
+const filterBadDeals = (products: any[]) => {
+  return products.filter((product) => {
+    return (
+      product[product?.bestEnum]?.allListings[
+        product[product?.bestEnum]?.bestIndex
+      ]?.price < product?.avgPrice
+    );
+  });
+};
 exports.putProducts = functions
-  .runWith({ timeoutSeconds: 540 })
-  .https.onCall((data, context) => {
+  .runWith({ timeoutSeconds: 540, memory: "2GB" })
+  .https.onCall(async (data, context) => {
+    const batch = db.batch();
     let products: any[] = data.products;
+    const UpdaterData: any = (
+      await db.collection("Products").doc("Updater").get()
+    ).data();
     products.forEach((product) => {
       const docRef = db.collection("Products").doc();
+      UpdaterData?.allProducts.push({ id: docRef.id, name: product.name });
       batch.set(docRef, product);
     });
+    // UpdaterData.nextProducts = UpdaterData.allProducts
+    //   .slice(0, 2)
+    //   .map(({ id }: { id: string }) => id);
+    //console.error(UpdaterData);
+    db.collection("Products")
+      .doc("Updater")
+      .update({ ...UpdaterData });
     batch.commit();
   });
 exports.putDailyProducts = functions
-  .runWith({ timeoutSeconds: 540 })
+  .runWith({ timeoutSeconds: 540, memory: "2GB" })
   .https.onCall((data, context) => {
-    const today = new Date();
+    const batch = db.batch();
     let products: any[] = data.products;
     products.forEach((product) => {
-      const docRef = db
-        .collection("DailyProductData")
-        .doc(
-          today.getMonth() +
-            1 +
-            "-" +
-            today.getDate() +
-            "-" +
-            today.getFullYear()
-        )
-        .collection("Products")
-        .doc(product.id);
+      const docRef = db.collection("DailyProductData").doc(product.id);
       batch.set(docRef, product);
     });
     batch.commit();
@@ -106,77 +164,58 @@ exports.putDailyProducts = functions
 exports.searchForProduct = functions
   .runWith({ timeoutSeconds: 540, memory: "2GB" })
   .https.onCall(async (data, context) => {
-    const today = new Date();
-    const productsBasic = await db
-      .collection("DailyProductData")
-      .doc(
-        today.getMonth() + 1 + "-" + today.getDate() + "-" + today.getFullYear()
-      )
-      .get();
-    console.error(data.searchText);
-    const productsBasicData = await productsBasic.data()?.products;
-    let filteredProducts = searchAlg(data.searchText, productsBasicData);
+    const productsBasic = (
+      await db.collection("Products").doc("Updater").get()
+    ).data()?.allProducts;
+    //console.error(data.searchText === "");
+    const filteredProducts = searchAlg(data.searchText, productsBasic);
     console.error(filteredProducts);
     const products = await db.getAll(
-      ...filteredProducts.splice(0, 20).map(({ id }) =>
-        db
-          .collection("DailyProductData")
-          .doc(
-            today.getMonth() +
-              1 +
-              "-" +
-              today.getDate() +
-              "-" +
-              today.getFullYear()
-          )
-          .collection("Products")
-          .doc(id)
-      )
+      ...filteredProducts
+        .slice(0, filteredProducts.length < 21 ? filteredProducts.length : 20)
+        .map(({ id }) => db.collection("DailyProductData").doc(id))
     );
     return {
-      products: products.map((doc, index) => ({
-        ...doc.data(),
-        coefficient: filteredProducts[index].coefficient,
-      })),
+      products: filterBadDeals(
+        products.map((doc, index) => ({
+          ...doc.data(),
+          coefficient: filteredProducts[index].coefficient,
+        }))
+      ),
     };
   });
 exports.getDailyProducts = functions
-  .runWith({ timeoutSeconds: 540 })
+  .runWith({ timeoutSeconds: 540, memory: "2GB" })
   .https.onCall(async (data, context) => {
-    const today = new Date();
     const limit: number = data.limit;
     let productsParsed: any[] = [];
     try {
-      const products = db
+      const products = await db
         .collection("DailyProductData")
-        .doc(
-          today.getMonth() +
-            1 +
-            "-" +
-            today.getDate() +
-            "-" +
-            today.getFullYear()
-        )
-        .collection("Products");
-      productsParsed = (await products.limit(limit).get()).docs.map((doc) =>
-        doc.data()
-      );
+        .limit(limit)
+        .get();
+      if (products.empty) {
+        console.error("AYO? WHERE ARE TODAY'S PRODUCTS!!??");
+      }
+      productsParsed = products.docs.map((doc) => doc.data());
     } catch (e) {
       console.error(e);
     }
     return {
-      products: productsParsed,
+      products: filterBadDeals(productsParsed),
     };
   });
-exports.getAllProducts = functions.https.onCall(async (data, context) => {
-  const products = db.collection("Products");
-  return {
-    products: (await products.get()).docs.map((doc) => ({
-      ...doc.data(),
-      id: doc.id,
-    })),
-  };
-});
+exports.getAllProducts = functions
+  .runWith({ timeoutSeconds: 540, memory: "2GB" })
+  .https.onCall(async (data, context) => {
+    const products = db.collection("Products");
+    return {
+      products: (await products.get()).docs.map((doc) => ({
+        ...doc.data(),
+        id: doc.id,
+      })),
+    };
+  });
 const siteEnums = {
   AMAZON: "amazon",
   BEST_BUY: "bestbuy",
@@ -192,8 +231,15 @@ const containsBannedWord = (title: string, words: string[]) => {
   }
   return false;
 };
+const sliceWithWrapping = (arr: any[], start: number, numElements: number) => {
+  let copy = [];
+  for (let i = start; i < start + numElements; i++) {
+    copy.push(arr[i % arr.length]);
+  }
+  return copy;
+};
 const scrapeSite = async (
-  allProducts: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>,
+  allProducts: FirebaseFirestore.DocumentData,
   baseUrl: string,
   firstHalfSiteUrl: string,
   secondHalfSiteUrl: string,
@@ -205,114 +251,208 @@ const scrapeSite = async (
   siteEnum: string
 ) => {
   const htmlFound: any = { siteEnum };
-  for (let i = 0; i < allProducts.docs.length; i++) {
-    const id = allProducts.docs[i].id;
+  for (let i = 0; i < allProducts.length; i++) {
+    const id = allProducts[i].id;
     // allProducts.forEach(({ doc }: { doc: { data: Function } }) => {
-    const { name, bannedWords } = allProducts.docs[i].data();
+    const { name, bannedWords } = allProducts[i];
     htmlFound[id] = { avgPrice: -1, bestIndex: -1, allListings: [] };
-    await fetch(
-      firstHalfSiteUrl +
-        encodeURIComponent(name).replace(/%20/g, "+") +
-        secondHalfSiteUrl
-    ).then(async (response) => {
-      let html = await response.text();
-      if (response.status === 200) {
-        const $ = cheerio.load(html);
-        productIdentifiers.forEach((productIdentifier) => {
-          $(productIdentifier)
-            .toArray()
-            .splice(0, 6)
-            .forEach((item, i) => {
-              let title = "";
-              let j = 0;
-              while (!title) {
-                title = $(item).find(titleIdentifiers[j]).text();
-                j++;
-              }
-              if (
-                siteEnum === siteEnums.EBAY &&
-                title.includes("NEW LISTING")
-              ) {
-                title = title.substring(11);
-              }
-              let lowerCaseTitle = title.toLowerCase();
-              if (
-                !containsBannedWord(lowerCaseTitle, bannedWords) &&
-                (lowerCaseTitle.includes(name) ||
-                  compare(name, lowerCaseTitle) > 0.6)
-              ) {
-                let price: string | undefined = $(item)
-                  .find(priceIdentifier)
-                  .text();
-                if (siteEnum === siteEnums.WALMART && price.includes("From")) {
-                  price = price.substring(6);
-                }
-                if (siteEnum === siteEnums.TARGET && price.includes("-")) {
-                  price = "";
-                }
-                if (price?.includes("$")) {
-                  price = price.substring(1);
-                }
-                if (price.includes(",")) {
-                  price =
-                    price.substring(0, price.indexOf(",")) +
-                    price.substring(price.indexOf(",") + 1);
-                }
-                if (isNaN(parseFloat(price))) {
-                  console.log(price);
-                  price = undefined;
-                }
-                if (price && title) {
-                  let url = $(item).find(urlIdentifier).attr().href;
-                  let imageUrl = $(item).find(imageUrlIdentifier).attr().src;
+    try {
+      await fetch(
+        firstHalfSiteUrl +
+          encodeURIComponent(name).replace(/%20/g, "+") +
+          secondHalfSiteUrl
+      )
+        .then(async (response) => {
+          let html = await response.text();
+          if (response.status === 200) {
+            const $ = cheerio.load(html);
+            productIdentifiers.forEach((productIdentifier) => {
+              $(productIdentifier)
+                .toArray()
+                .splice(0, 6)
+                .forEach((item, i) => {
+                  let title = "";
+                  let j = 0;
+                  while (!title) {
+                    title = $(item).find(titleIdentifiers[j]).text();
+                    j++;
+                  }
                   if (
-                    siteEnum === siteEnums.WALMART ||
-                    siteEnum === siteEnums.AMAZON
+                    siteEnum === siteEnums.EBAY &&
+                    title.includes("NEW LISTING")
                   ) {
-                    url = baseUrl + url;
-                    if (siteEnum === siteEnums.AMAZON) {
-                      url = url + "&tag=yoyogogo-20";
+                    title = title.substring(11);
+                  }
+                  let lowerCaseTitle = title.toLowerCase();
+                  if (
+                    !containsBannedWord(lowerCaseTitle, bannedWords) &&
+                    (lowerCaseTitle.includes(name) ||
+                      compareProductTitles(name, lowerCaseTitle) > 1)
+                  ) {
+                    let price: string | undefined = $(item)
+                      .find(priceIdentifier)
+                      .text();
+                    if (
+                      siteEnum === siteEnums.WALMART &&
+                      price.includes("From")
+                    ) {
+                      price = price.substring(6);
+                    }
+                    if (siteEnum === siteEnums.TARGET && price.includes("-")) {
+                      price = "";
+                    }
+                    if (price?.includes("$")) {
+                      price = price.substring(1);
+                    }
+                    if (price.includes(",")) {
+                      price =
+                        price.substring(0, price.indexOf(",")) +
+                        price.substring(price.indexOf(",") + 1);
+                    }
+                    if (isNaN(parseFloat(price))) {
+                      console.log(price);
+                      price = undefined;
+                    }
+                    if (price && title) {
+                      let url = $(item).find(urlIdentifier).attr().href;
+                      let imageUrl = $(item)
+                        .find(imageUrlIdentifier)
+                        .attr().src;
+                      if (
+                        siteEnum === siteEnums.WALMART ||
+                        siteEnum === siteEnums.AMAZON
+                      ) {
+                        url = baseUrl + url;
+                        if (siteEnum === siteEnums.AMAZON) {
+                          url =
+                            url.substring(0, url.lastIndexOf("/") + 1) +
+                            "?tag=yoyogogo-20";
+                        }
+                      }
+                      htmlFound[id].allListings.push({
+                        title: title,
+                        price: parseFloat(price),
+                        url,
+                        imageUrl,
+                      });
                     }
                   }
-                  htmlFound[id].allListings.push({
-                    title: title,
-                    price: parseFloat(price),
-                    url,
-                    imageUrl,
-                  });
-                }
+                });
+            });
+            let total = 0;
+            let lowest =
+              htmlFound[id].allListings.length > 0
+                ? htmlFound[id].allListings[0].price
+                : 1000000;
+            let lowestIndex = htmlFound[id].allListings.length > 0 ? 0 : -1;
+            htmlFound[id].allListings.forEach((listing: any, index: number) => {
+              total += listing.price;
+              if (listing.price < lowest) {
+                lowest = listing.price;
+                lowestIndex = index;
               }
             });
-        });
-        let total = 0;
-        let lowest =
-          htmlFound[id].allListings.length > 0
-            ? htmlFound[id].allListings[0].price
-            : 1000000;
-        let lowestIndex = htmlFound[id].allListings.length > 0 ? 0 : -1;
-        htmlFound[id].allListings.forEach((listing: any, index: number) => {
-          total += listing.price;
-          if (listing.price < lowest) {
-            lowest = listing.price;
-            lowestIndex = index;
+            htmlFound[id].bestIndex = lowestIndex;
+            // console.log(htmlFound[id].allListings[lowestIndex].url);
+            // console.log(htmlFound[id].allListings[lowestIndex].imageUrl);
+            // console.log("\n");
+            htmlFound[id].avgPrice =
+              lowestIndex === -1
+                ? -1
+                : total / htmlFound[id].allListings.length;
           }
+        })
+        .catch((e) => {
+          console.error(e);
         });
-        htmlFound[id].bestIndex = lowestIndex;
-        // console.log(htmlFound[id].allListings[lowestIndex].url);
-        // console.log(htmlFound[id].allListings[lowestIndex].imageUrl);
-        // console.log("\n");
-        htmlFound[id].avgPrice =
-          lowestIndex === -1 ? -1 : total / htmlFound[id].allListings.length;
-      }
-    });
+    } catch (e) {
+      console.error(e);
+    }
   }
   //console.error(htmlFound);
   return htmlFound;
 };
-
+// const getTargetProducts = async (allProducts: any[]) => {
+//   let productsFound: any = { siteEnum: siteEnums.TARGET };
+//   for (let i = 0; i < allProducts.length; i++) {
+//     const doc = allProducts[i];
+//     // allProducts.forEach(({ doc }: { doc: { data: Function } }) => {
+//     const { name, bannedWords, id } = doc;
+//     const nameArr = name.split(" ");
+//     const adjustedName =
+//       nameArr.length > 12
+//         ? nameArr
+//             .reduce((prev: string, curr: string) => {
+//               return prev + curr + " ";
+//             }, "")
+//             .trim()
+//         : name;
+//     await fetch(
+//       "https://api.redcircleapi.com/request?api_key=A73B328B79D842F297703F20A8D0F208&type=search&search_term=" +
+//         encodeURIComponent(adjustedName).replace(/%20/g, "+")
+//     ).then(async (response) => {
+//       if (response.status === 200) {
+//         const resJSON: any = await response.json();
+//         // console.log(resJSON.search_results.map(({ product }) => product.title));
+//         let total = 0;
+//         let bestIndex = resJSON?.search_result ? 0 : -1;
+//         let lowestPrice = resJSON?.search_result
+//           ? resJSON?.search_result[0]?.offers?.primary?.price
+//           : undefined;
+//         let allListings = [];
+//         if (resJSON?.search_result) {
+//           console.log("TARGET: " + lowestPrice);
+//           allListings = resJSON.search_results.map(
+//             (
+//               { product, offers }: { product: any; offers: any },
+//               index: number
+//             ) => {
+//               console.log("TARGET: " + offers.primary.price);
+//               if (
+//                 !containsBannedWord(product.title.toLowerCase(), bannedWords) &&
+//                 (product.title.toLowerCase().includes(name) ||
+//                   compareProductTitles(name, product.title.toLowerCase()) > 1)
+//               ) {
+//                 total += offers.primary.price ? offers.primary.price : 0;
+//                 if (lowestPrice > offers?.primary?.price) {
+//                   bestIndex = index;
+//                   lowestPrice = offers.primary.price;
+//                 }
+//                 return {
+//                   title: product.title,
+//                   price: offers.primary.price,
+//                   url: product.link,
+//                   imageUrl: product.main_image,
+//                 };
+//               }
+//               return null;
+//             }
+//           );
+//         }
+//         productsFound[id] = {
+//           avgPrice: allListings.length > 0 ? total / allListings.length : -1,
+//           bestIndex,
+//           allListings: allListings.filter((product: any) => product !== null),
+//         };
+//       }
+//     });
+//   }
+//   return productsFound;
+// };
 const scraperMain = async () => {
-  const allProducts = await productsColl.get();
-  console.time("loadingSpeed");
+  const batch = db.batch();
+  const allProductsArrs: any = (
+    await db.collection("Products").doc("Updater").get()
+  ).data();
+  const allProducts: any[] = (
+    await db.getAll(
+      ...allProductsArrs?.nextProducts.map((docId: string) =>
+        db.collection("Products").doc(docId)
+      )
+    )
+  ).map((doc) => ({ ...doc.data(), id: doc.id }));
+  // console.time("loadingSpeed");
+  //console.error(allProducts);
   let allSiteData = await Promise.all([
     scrapeSite(
       allProducts,
@@ -334,11 +474,16 @@ const scraperMain = async () => {
     ),
     // scrapeSite(
     //   allProducts,
+    //   "https://www.bestbuy.com",
     //   "https://www.bestbuy.com/site/searchpage.jsp?st=",
     //   "",
-    //   "li.sku-item",
-    //   "div > div > div.right-column > div.information > div:nth-child(2) > div.sku-title > h4 > a",
+    //   ["li.sku-item"],
+    //   [
+    //     "div > div > div.right-column > div.information > div:nth-child(2) > div.sku-title > h4 > a",
+    //   ],
     //   "div > div > div.right-column > div.price-block > div.sku-list-item-price > div > div > div > div > div > div > div > div:nth-child(1) > div > div:nth-child(1) > div > span:nth-child(1)",
+    //   "div > div > div.information > h4 > a",
+    //   "div > div > a > img",
     //   siteEnums.BEST_BUY
     // ),
     scrapeSite(
@@ -353,31 +498,27 @@ const scraperMain = async () => {
       "img.s-item__image-img",
       siteEnums.EBAY
     ),
-    // scrapeSite(
-    //   allProducts,
-    //   "https://www.walmart.com",
-    //   "https://www.walmart.com/search?q=",
-    //   "",
-    //   "div.mb1.ph1.pa0-xl.bb.b--near-white.w-25",
-    //   "span.f6.f5-l.normal.dark-gray.mb0.mt1.lh-title",
-    //   "div.b.black.f5.mr1.mr2-xl.lh-copy.f4-l",
-    //   "a.absolute.w-100.h-100.z-1",
-    //   "img.absolute.top-0.left-0",
-    //   siteEnums.WALMART
-    // ),
-    //   scrapeSite(
-    //     "https://www.target.com/s?searchTerm=",
-    //     "",
-    //     "div.styles__StyledCol-sc-ct8kx6-0.ebNJlV",
-    //     "a.Link__StyledLink-sc-4b9qcv-0.styles__StyledTitleLink-sc-h3r0um-1.csEnsr.dAyBrL.h-display-block.h-text-bold.h-text-bs",
-    //     "div > section > div > div:nth-child(2) > div > div > div:nth-child(2) > div > div > div:nth-child(2) > div:nth-child(1) > div.h-padding-r-tiny > div > span",
-    //     siteEnums.TARGET
-    //   )
+    scrapeSite(
+      allProducts,
+      "https://www.walmart.com",
+      "https://www.walmart.com/search?q=",
+      "",
+      [
+        "div.mb1.ph1.pa0-xl.bb.b--near-white.w-25",
+        "div.mb1.ph1.pa0-xl.bb.b--near-white.w-25",
+      ],
+      ["span.f6.f5-l.normal.dark-gray.mb0.mt1.lh-title"],
+      "div > div > div > div:nth-child(2) > div.flex.flex-wrap.justify-start.items-center.lh-title.mb2.mb1-m > div",
+      "a.absolute.w-100.h-100.z-1",
+      "img.absolute.top-0.left-0",
+      siteEnums.WALMART
+    ),
+    // getTargetProducts(allProducts),
   ]);
   let overallProductData: any[] = [];
-  allProducts.docs.forEach((doc) => {
-    const { name } = doc.data();
-    const id = doc.id;
+  allProducts.forEach((doc) => {
+    const name = doc?.name;
+    const id = doc?.id;
     overallProductData.push({
       name,
       id,
@@ -419,36 +560,43 @@ const scraperMain = async () => {
     ) {
       overallProductData.splice(overallProductData.length - 1, 1);
     } else {
-      const today = new Date();
-      const docRef = db
-        .collection("DailyProductData")
-        .doc(
-          today.getMonth() +
-            1 +
-            "-" +
-            today.getDate() +
-            "-" +
-            today.getFullYear()
-        )
-        .collection("Products")
-        .doc(id);
+      const docRef = db.collection("DailyProductData").doc(id);
       batch.set(docRef, overallProductData[overallProductData.length - 1]);
     }
   });
-  const today = new Date();
-  const docRef = db
-    .collection("DailyProductData")
-    .doc(
-      today.getMonth() + 1 + "-" + today.getDate() + "-" + today.getFullYear()
-    );
-  batch.set(docRef, {
-    products: overallProductData.map(({ id, name }) => ({
-      id,
-      name,
-    })),
-  });
+  allProductsArrs.nextProducts = sliceWithWrapping(
+    allProductsArrs?.allProducts,
+    allProductsArrs?.allProducts.findIndex(
+      ({ id }: { id: string }) =>
+        id ===
+        allProductsArrs?.nextProducts[allProductsArrs?.nextProducts.length - 1]
+    ),
+    2
+  ).map(({ id }) => id);
+  // fetch(
+  //   "https://hooks.slack.com/services/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",
+  //   {
+  //     method: "POST",
+  //     body: JSON.stringify({ text: JSON.stringify(overallProductData) }),
+  //   }
+  // );
+  db.collection("Products")
+    .doc("Updater")
+    .update({ ...allProductsArrs });
+  // const today = new Date();
+  // const docRef = db
+  //   .collection("DailyProductData")
+  //   .doc(
+  //     today.getMonth() + 1 + "-" + today.getDate() + "-" + today.getFullYear()
+  //   );
+  // batch.set(docRef, {
+  //   products: overallProductData.map(({ id, name }) => ({
+  //     id,
+  //     name,
+  //   })),
+  // });
   //console.error(overallProductData);
   batch.commit();
-  console.timeEnd("loadingSpeed");
+  // console.timeEnd("loadingSpeed");
   // console.log(overallProductData);
 };

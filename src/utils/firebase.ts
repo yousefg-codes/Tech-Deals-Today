@@ -6,7 +6,7 @@ import {
   getFunctions,
   httpsCallable,
 } from "firebase/functions";
-const cheerio = require("cheerio");
+
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 // Your web app's Firebase configuration
@@ -25,16 +25,24 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 const functions = getFunctions();
-// connectFunctionsEmulator(functions, "localhost", 5001);
+//connectFunctionsEmulator(functions, "localhost", 5001);
 
 export const getDailyProducts = async () => {
   const getDailyProducts = httpsCallable(functions, "getDailyProducts");
   let returnedData = (await getDailyProducts({ limit: 30 })).data as any;
   return (await returnedData).products;
 };
+export const loadMoreProducts = async (currentlyLoaded: number) => {
+  const getDailyProducts = httpsCallable(functions, "getDailyProducts");
+  let returnedData = (await getDailyProducts({ limit: currentlyLoaded + 50 }))
+    .data as any;
+  console.log((await returnedData).products.length + " " + currentlyLoaded);
+  return (await returnedData).products.slice(currentlyLoaded);
+};
 export const getSearchedProducts = async (searchText: string) => {
   const getSearchedProduct = httpsCallable(functions, "searchForProduct");
-  let returnedData = (await getSearchedProduct({ searchText })).data as any;
+  let returnedData = (await getSearchedProduct({ searchText: searchText }))
+    .data as any;
   return (await returnedData).products;
 };
 export const testScraper = async () => {
