@@ -12,7 +12,7 @@ import {
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyC6tgUgz0zYzUTavFwucaIlJQnwIpTKUxY",
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
   authDomain: "tech-deals-8a355.firebaseapp.com",
   projectId: "tech-deals-8a355",
   storageBucket: "tech-deals-8a355.appspot.com",

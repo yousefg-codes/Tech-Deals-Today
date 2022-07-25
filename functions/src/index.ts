@@ -106,10 +106,10 @@ exports.runScraper = functions
   .pubsub.schedule("every 5 minutes")
   .onRun(async (context) => {
     await scraperMain().catch((e) => {
-      fetch(
-        "https://hooks.slack.com/services/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",
-        { method: "POST", body: JSON.stringify({ text: e }) }
-      );
+      fetch(process.env.SLACK_URL || "", {
+        method: "POST",
+        body: JSON.stringify({ text: e }),
+      });
     });
     return null;
   });
@@ -573,13 +573,6 @@ const scraperMain = async () => {
     ),
     2
   ).map(({ id }) => id);
-  // fetch(
-  //   "https://hooks.slack.com/services/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",
-  //   {
-  //     method: "POST",
-  //     body: JSON.stringify({ text: JSON.stringify(overallProductData) }),
-  //   }
-  // );
   db.collection("Products")
     .doc("Updater")
     .update({ ...allProductsArrs });
